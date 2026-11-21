@@ -1,0 +1,37 @@
+{
+ "name": "if-i-go-quiet",
+ "private": true,
+ "version": "1.0.0",
+ "type": "module",
+ "scripts": {
+  "dev": "vite",
+  "build": "tsc --noEmit && vite build",
+  "preview": "vite preview",
+  "test": "vitest run",
+  "typecheck": "tsc --noEmit",
+  "lint": "eslint .",
+  "format": "prettier --write .",
+  "sync:shared": "mkdir -p supabase/functions/_shared && sed \"s#from './types'#from './types.ts'#\" src/lib/machine.ts > supabase/functions/_shared/machine.ts && cp src/lib/types.ts supabase/functions/_shared/types.ts",
+  "deploy:functions": "npm run sync:shared && supabase functions deploy scheduler && supabase functions deploy contact-action && supabase functions deploy suggest"
+ },
+ "dependencies": {
+  "react": "^18.3.1",
+  "react-dom": "^18.3.1",
+  "@supabase/supabase-js": "^2.45.0",
+  "qrcode": "^1.5.4"
+ },
+ "devDependencies": {
+  "@types/react": "^18.3.3",
+  "@types/react-dom": "^18.3.0",
+  "@vitejs/plugin-react": "^4.3.1",
+  "typescript": "^5.5.4",
+  "vite": "^5.4.2",
+  "vitest": "^2.0.5",
+  "@types/qrcode": "^1.5.5",
+  "eslint": "^9.9.0",
+  "@eslint/js": "^9.9.0",
+  "typescript-eslint": "^8.2.0",
+  "eslint-plugin-react-hooks": "^5.1.0",
+  "prettier": "^3.3.3"
+ }
+}

@@ -1,0 +1,9 @@
+import {useSyncExternalStore} from 'react'
+/** English / Hindi for the main screens, plus elder-friendly (large text) mode. */
+export interface Prefs{lang:'en'|'hi';elder:boolean}
+const hi:Record<string,string>={'Start':'शुरू','My status':'मेरी स्थिति','My map':'मेरा नक्शा','My people':'मेरे अपने लोग','Activity':'गतिविधि','Messages':'संदेश','Family view':'परिवार दृश्य','Log out':'लॉग आउट','See how it works (2-minute demo)':'देखें यह कैसे काम करता है (2 मिनट)','Pretend I’m unreachable':'मान लें मैं संपर्क में नहीं हूँ','Confirm':'पुष्टि करें','Create my map':'मेरा नक्शा बनाएँ','I’m okay: check in':'मैं ठीक हूँ: चेक-इन करें','Cancel the process: I’m okay':'प्रक्रिया रद्द करें: मैं ठीक हूँ','Revoke access and end release':'पहुँच रद्द करें और रिलीज़ खत्म करें','Help your family help you, if you ever can’t answer.':'अगर आप कभी जवाब न दे सकें, तो परिवार के लिए आपकी मदद करना आसान बनाइए।','Emergency map':'आपातकालीन नक्शा','Contacts and rules':'संपर्क और नियम','Audit log':'ऑडिट लॉग','Money & Insurance':'पैसा और बीमा','Documents':'दस्तावेज़','Digital Life':'डिजिटल जीवन','People to Call':'किसे फ़ोन करें','Last Wishes':'अंतिम इच्छाएँ','Large text':'बड़े अक्षर','Print or save as PDF':'प्रिंट करें या PDF सेव करें','I can reach them. They’re fine.':'मैं उनसे बात कर सकता/सकती हूँ। वे ठीक हैं।','Emergency card':'आपातकालीन कार्ड'}
+let P:Prefs={lang:'en',elder:false};try{P={...P,...JSON.parse(localStorage.getItem('iigq-prefs')||'{}')}}catch{/* ignore */}
+const subs=new Set<()=>void>(),apply=()=>document.documentElement.classList.toggle('elder',P.elder);apply()
+export const setPrefs=(p:Partial<Prefs>)=>{P={...P,...p};try{localStorage.setItem('iigq-prefs',JSON.stringify(P))}catch{/* ignore */}apply();subs.forEach(f=>f())}
+export const usePrefs=()=>useSyncExternalStore(f=>{subs.add(f);return()=>{subs.delete(f)}},()=>P)
+export const t=(s:string)=>(P.lang==='hi'&&hi[s])||s
