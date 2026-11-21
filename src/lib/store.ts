@@ -5,9 +5,9 @@ import {sb,push} from './supabase'
 import {getKey,exportKey,seal,open,resetKey} from './crypto'
 /** Local persistence layer. To use Supabase, replace load()/emit() with table reads/writes (see README + supabase/schema.sql). */
 const KEY='iigq-v2'
-const load=():Model=>{try{const j=localStorage.getItem(KEY);return j?JSON.parse(j):fresh()}catch{/* ignore corrupted storage */return fresh()}}
+const load=():Model=>{try{const j=localStorage.getItem(KEY);return j?JSON.parse(j):fresh()}catch{return fresh()}}
 let M:Model=load(),lastActive=Date.now();const subs=new Set<()=>void>()
-const emit=()=>{try{localStorage.setItem(KEY,JSON.stringify(M))}catch{/* ignore storage quota errors */}subs.forEach(f=>f());if(sb&&!M.demo&&M.loggedIn)void push(M)}
+const emit=()=>{try{localStorage.setItem(KEY,JSON.stringify(M))}catch{}subs.forEach(f=>f());if(sb&&!M.demo&&M.loggedIn)void push(M)}
 export const setModel=(m:Model)=>{M=m;emit()}
 export const useModel=()=>useSyncExternalStore(f=>{subs.add(f);return()=>{subs.delete(f)}},()=>M)
 /** Runs fn on a copy; commits unless it returns an error string. */
@@ -35,7 +35,9 @@ export async function addEntry(cat:number,prio:number,p:Plain){
   act(m=>{m.key=jwk;m.entries.push({id:m.uid++,cat,prio,...ent});log(m,m.owner,'ENTRY_ADDED',`Entry added to category ${cat+1} (encrypted in browser)`)})}
 export function useOpen(es:Entry[],jwk:JsonWebKey|null){
   const[o,setO]=useState<Record<number,Plain>>({})
+  const sig=es.map(e=>e.id+':'+e.iv).join(',')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(()=>{let ok=true;(async()=>{const k=await getKey(jwk),r:Record<number,Plain>={}
-    for(const e of es)try{r[e.id]=await open(k,e)}catch{/* ignore decrypt failure */}
-    if(ok)setO(r)})();return()=>{ok=false}},[es,jwk])
+    for(const e of es)try{r[e.id]=await open(k,e)}catch{}
+    if(ok)setO(r)})();return()=>{ok=false}},[sig,jwk?.k])
   return o}
