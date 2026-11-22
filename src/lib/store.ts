@@ -7,7 +7,12 @@ import {getKey,exportKey,seal,open,resetKey} from './crypto'
 const KEY='iigq-v2'
 const load=():Model=>{try{const j=localStorage.getItem(KEY);return j?JSON.parse(j):fresh()}catch{return fresh()}}
 let M:Model=load(),lastActive=Date.now();const subs=new Set<()=>void>()
-const emit=()=>{try{localStorage.setItem(KEY,JSON.stringify(M))}catch{}subs.forEach(f=>f());if(sb&&!M.demo&&M.loggedIn)void push(M)}
+let le=0
+export const lastEmit=()=>le
+export const getModel=()=>M
+/** Apply a model fetched from the server without pushing it back. */
+export const syncFromServer=(m:Model)=>{M=m;try{localStorage.setItem(KEY,JSON.stringify(M))}catch{}subs.forEach(f=>f())}
+const emit=()=>{le=Date.now();try{localStorage.setItem(KEY,JSON.stringify(M))}catch{}subs.forEach(f=>f());if(sb&&!M.demo&&M.loggedIn)void push(M)}
 export const setModel=(m:Model)=>{M=m;emit()}
 export const useModel=()=>useSyncExternalStore(f=>{subs.add(f);return()=>{subs.delete(f)}},()=>M)
 /** Runs fn on a copy; commits unless it returns an error string. */
@@ -15,7 +20,7 @@ export function act(fn:(m:Model)=>string|null|void):string|null{
   const c=structuredClone(M),r=fn(c);if(typeof r==='string')return r
   M=c;emit();return null}
 export function tick(){
-  const c=structuredClone(M),n=c.audit.length;evaluate(c)
+  const c=structuredClone(M),n=c.audit.length;if(!(sb&&!c.demo))evaluate(c)
   if(!c.demo&&c.loggedIn&&Date.now()-lastActive>10*60*1000){c.loggedIn=false;log(c,'system','SESSION_EXPIRED','Logged out after inactivity')}
   if(c.audit.length!==n){M=c;emit()}}
 export const touch=()=>{lastActive=Date.now()}
@@ -36,6 +41,7 @@ export async function addEntry(cat:number,prio:number,p:Plain){
 export function useOpen(es:Entry[],jwk:JsonWebKey|null){
   const[o,setO]=useState<Record<number,Plain>>({})
   const sig=es.map(e=>e.id+':'+e.iv).join(',')
+  // depend on a stable signature, not the array itself (a new array every render caused an endless re-render loop)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(()=>{let ok=true;(async()=>{const k=await getKey(jwk),r:Record<number,Plain>={}
     for(const e of es)try{r[e.id]=await open(k,e)}catch{}
