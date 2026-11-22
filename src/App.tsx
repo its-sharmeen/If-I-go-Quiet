@@ -2,12 +2,12 @@ import {useEffect,useState} from 'react'
 import QR from 'qrcode'
 import type {Model,Mail,Plain} from './lib/types'
 import {CATS,FAMORD,ST,NICE,dayMs,quorumError,familyAccess,linkOk,checkIn,revoke,pause,goQuiet,decide,addContact,acceptInvite,removeContact,saveRules,log} from './lib/machine'
-import {sb,pull,signInLink,ownerId,contactAction,suggest,type ContactReply} from './lib/supabase'
+import {sb,pull,signInLink,signInPassword,signUpPassword,ownerId,contactAction,suggest,kick,type ContactReply} from './lib/supabase'
 import {IDEAS,type Idea} from './lib/ideas'
 import {t,usePrefs,setPrefs} from './lib/i18n'
 import {getKey,open as openCt} from './lib/crypto'
 import {looksSecret} from './lib/secrets'
-import {useModel,act,tick,touch,setModel,seedDemo,newAccount,logout,login,deleteAccount,addEntry,useOpen} from './lib/store'
+import {useModel,act,tick,touch,setModel,syncFromServer,getModel,lastEmit,seedDemo,newAccount,logout,login,deleteAccount,addEntry,useOpen} from './lib/store'
 
 type View='home'|'dash'|'map'|'contacts'|'audit'|'inbox'|'verify'|'family'
 const NAV:[View,string][]=[['home','Start'],['dash','My status'],['map','My map'],['contacts','My people'],['audit','Activity'],['inbox','Messages'],['family','Family view']]
@@ -19,6 +19,9 @@ export default function App(){
   useEffect(()=>{const t=setInterval(tick,1000),c=()=>touch();window.addEventListener('click',c);return()=>{clearInterval(t);window.removeEventListener('click',c)}},[])
   useEffect(()=>{if(!sb)return;const f=async(email:string)=>{const d=await pull();if(d)setModel({...d,loggedIn:true});else newAccount(email.split('@')[0],email)}
     const{data:l}=sb.auth.onAuthStateChange((_e,s)=>{if(s?.user.email)void f(s.user.email)});return()=>l.subscription.unsubscribe()},[])
+  useEffect(()=>{if(!sb||m.demo||!m.loggedIn||!m.seeded)return
+    const fp=(x:Model)=>[x.audit.length,x.state,x.mail.length,x.last,x.contacts.map(c=>+c.accepted).join(''),Object.keys(x.conf).length,x.ep,x.quorum].join('|')
+    const t=setInterval(async()=>{if(Date.now()-lastEmit()<6000)return;const d=await pull();if(d&&fp(d)!==fp(getModel()))syncFromServer({...d,loggedIn:true})},4000);return()=>clearInterval(t)},[m.demo,m.loggedIn,m.seeded])
   const say=(s:string|null)=>{if(s){setMsg(s);setTimeout(()=>setMsg(''),3500)}}
   const v=!m.seeded||!m.loggedIn?'home':view
   const cm=location.hash.match(/^#\/c\/([^/]+)\/(.+)$/);if(cm)return<><header><b>🗺️ If I Go Quiet</b><Prefs/></header><main><ContactPage owner={cm[1]} tok={cm[2]}/></main></>
@@ -70,10 +73,11 @@ function Dash({m,say}:{m:Model;say:(s:string|null)=>void}){
   return<>
     <div className="card"><div className="row"><h2>{m.owner}</h2><span className={`pill s-${m.state}`}>{NICE[m.state]}</span></div>
     <div className="steps">{ST.map(s=><i key={s} className={s===m.state?'on':''}>{NICE[s]}</i>)}</div>
-    <Countdown m={m}/><p>You last said you’re okay at <b>{tm(m.last)}</b>. We check in every {m.interval} days. If you don’t answer, we wait {m.grace} more days, then ask your trusted people. {m.quorum} of {n} must agree.</p>
+    <Countdown m={m}/>{!m.demo&&m.spd<86400&&<p className="tag">Fast test mode is on: 1 day = 1 minute.</p>}<p>You last said you’re okay at <b>{tm(m.last)}</b>. We check in every {m.interval} days. If you don’t answer, we wait {m.grace} more days, then ask your trusted people. {m.quorum} of {n} must agree.</p>
     {accepted<m.quorum&&<p className="warn">Only {accepted} contact(s) accepted. You need {m.quorum} accepted contacts for a release to be possible.</p>}
     {m.state==='RELEASED'?<button className="p big" onClick={()=>{act(x=>revoke(x));say('Access revoked.')}}>{t('Revoke access and end release')}</button>
     :<button className="p big" onClick={()=>{act(x=>checkIn(x));say(act1?'Checked in. Timer reset.':'Cancelled. Back to Active.')}}>{t(act1?'I’m okay: check in':'Cancel the process: I’m okay')}</button>}
+    {!m.demo&&act1&&<div className="guide"><b>Live test (about 3 minutes)</b><p>Real emails. First add one trusted person in “My people” and wait for them to accept the invitation. Then start the test and don’t tap “I’m okay”.</p><button className="p" disabled={accepted<1} onClick={()=>{act(x=>{x.spd=60;x.interval=1;x.grace=2;x.quorum=1;x.last=Date.now();log(x,x.owner,'LIVE_TEST','Started 3-minute live test (1 day = 1 minute)')});say('Live test started. Expect a reminder email in about a minute.')}}>▶ Start the 3-minute live test</button></div>}
     {act1&&<p><button onClick={()=>{act(x=>pause(x,m.demo?3:7));say('Check-ins paused.')}}>Pause check-ins ({m.demo?3:7} days)</button></p>}</div>
     <div className="card"><h3>What’s in your map</h3>{CATS.map((c,i)=>{const k=m.entries.filter(e=>e.cat===i).length;return<span key={c} className="pill" style={{background:k?'var(--ok)':'var(--mu)',margin:2,display:'inline-block',color:'#fff'}}>{k?'✓':'○'} {c} ({k})</span>})}</div>
     <EmergencyCard m={m}/>
@@ -111,13 +115,14 @@ function Contacts({m,say}:{m:Model;say:(s:string|null)=>void}){
   return<>
     <h2>My trusted people</h2>
     {m.contacts.map(x=><div className="card" key={x.id}><div className="row"><div><b>{x.name}</b> <span className="mu">{x.rel} · {x.email}{x.phone?' · '+x.phone:''}</span><br/><span className="tag">{x.accepted?'Accepted invitation':'Invited, not yet accepted'}</span></div>
-    <div>{!x.accepted&&<button onClick={()=>act(y=>acceptInvite(y,x.id))}>Simulate accept</button>} <button className="d" onClick={()=>say(act(y=>removeContact(y,x.id)))}>Remove</button></div></div></div>)}
+    <div>{!x.accepted&&m.demo&&<button onClick={()=>act(y=>acceptInvite(y,x.id))}>Simulate accept</button>} <button className="d" onClick={()=>say(act(y=>removeContact(y,x.id)))}>Remove</button></div></div></div>)}
     <div className="card"><h3>Add contact ({m.contacts.length} of 5)</h3><label>Name<input value={c.n} onChange={e=>setC({...c,n:e.target.value})}/></label><label>Relationship<input value={c.r} onChange={e=>setC({...c,r:e.target.value})}/></label><label>Email<input type="email" value={c.e} onChange={e=>setC({...c,e:e.target.value})}/></label>
-    <label>Mobile (optional, for SMS and WhatsApp)<input value={c.p} onChange={e=>setC({...c,p:e.target.value})} placeholder="+91 98765 43210"/></label><button className="p" disabled={m.contacts.length>=5} onClick={()=>{const r=act(y=>addContact(y,c.n,c.r,c.e,c.p));if(r)say(r);else setC({n:'',r:'',e:'',p:''})}}>Send invitation</button></div>
-    <div className="card"><h3>Rules</h3><label>Check-in interval (days)<select value={iv} onChange={e=>setIv(+e.target.value)}>{[7,14,30].map(v=><option key={v}>{v}</option>)}</select></label>
+    <label>Mobile (optional, for SMS and WhatsApp)<input value={c.p} onChange={e=>setC({...c,p:e.target.value})} placeholder="+91 98765 43210"/></label><button className="p" disabled={m.contacts.length>=5} onClick={()=>{const r=act(y=>addContact(y,c.n,c.r,c.e,c.p));if(r)say(r);else{setC({n:'',r:'',e:'',p:''});if(sb&&!m.demo){say('Invitation is on its way by email.');setTimeout(kick,1500)}}}}>Send invitation</button></div>
+    <div className="card"><h3>Rules</h3><label>Check-in interval (days)<select value={iv} onChange={e=>setIv(+e.target.value)}>{[1,2,7,14,30].map(v=><option key={v}>{v}</option>)}</select></label>
     <label>Grace period (days)<select value={g} onChange={e=>setG(+e.target.value)}>{[1,2,3,5,7].map(v=><option key={v}>{v}</option>)}</select></label>
     <label>Quorum (contacts who must confirm)<input type="number" min={1} value={q} onChange={e=>setQ(+e.target.value)}/></label>
     {quorumError(q,m.contacts.length)&&<p className="er">{quorumError(q,m.contacts.length)}</p>}
+    {!m.demo&&<label style={{display:'flex',gap:8}}><input type="checkbox" style={{width:'auto'}} checked={m.spd<86400} onChange={e=>act(y=>{y.spd=e.target.checked?60:86400;y.last=Date.now()})}/> Fast test mode: 1 day = 1 minute, so you can show the whole flow in a few minutes</label>}
     <button className="p" onClick={()=>{const r=act(y=>saveRules(y,iv,g,q));say(r??'Rules saved.')}}>Save rules</button></div>
     <div className="card"><h3>Delete account</h3><p className="mu">Removes your map, contacts and audit log from this browser.</p><button className="d" onClick={()=>{if(confirm('Delete everything?'))deleteAccount()}}>Delete account and all data</button></div>
   </>
@@ -177,9 +182,16 @@ function Ideas({pick}:{pick:(i:Idea)=>void}){
 function Prefs(){const p=usePrefs();return<span className="row" style={{gap:6}}><button onClick={()=>setPrefs({lang:p.lang==='en'?'hi':'en'})}>{p.lang==='en'?'हिन्दी':'English'}</button><button aria-pressed={p.elder} onClick={()=>setPrefs({elder:!p.elder})}>{t('Large text')}</button></span>}
 
 function SignIn(){
-  const[e,setE]=useState(''),[s,setS]=useState('')
-  return<div className="card"><h3>Log in with a magic link</h3><label>Email<input type="email" value={e} onChange={x=>setE(x.target.value)}/></label>
-  <button className="p" onClick={async()=>{const r=await signInLink(e.trim());setS(r.error?r.error.message:'Check your email for the sign-in link.')}}>Email me a sign-in link</button>{s&&<p role="status">{s}</p>}</div>
+  const[e,setE]=useState(''),[pw,setPw]=useState(''),[s,setS]=useState('')
+  return<div className="card"><h3>Try it for real: log in or create an account</h3>
+  <p className="mu">Add one trusted person (a second email of yours, or the same one), then start the 3-minute live test on your dashboard. Real emails are sent.</p>
+  <label>Email<input type="email" value={e} onChange={x=>setE(x.target.value)}/></label>
+  <label>Password (at least 6 characters)<input type="password" value={pw} onChange={x=>setPw(x.target.value)}/></label>
+  <div className="row" style={{justifyContent:'flex-start'}}>
+    <button className="p" disabled={!pw||!e} onClick={async()=>{const r=await signInPassword(e.trim(),pw);setS(r.error?r.error.message:'')}}>Log in</button>
+    <button disabled={!pw||!e} onClick={async()=>{if(pw.length<6)return setS('Password needs at least 6 characters.');const r=await signUpPassword(e.trim(),pw);setS(r.error?r.error.message:r.data.session?'':'Account created. Check your email to confirm it, then log in.')}}>Create account</button>
+    <button disabled={!e} onClick={async()=>{const r=await signInLink(e.trim());setS(r.error?r.error.message:'Check your email for the sign-in link.')}}>Email me a magic link instead</button></div>
+  {s&&<p role="status">{s}</p>}</div>
 }
 
 function EmergencyCard({m}:{m:Model}){
@@ -198,6 +210,8 @@ function ContactPage({owner,tok}:{owner:string;tok:string}){
   if(!r)return<p>Loading…</p>
   if(r.error)return<div className="card"><h2>Access denied</h2><p className="er">{r.error}</p></div>
   if(r.view)return<div className="fam"><p className="warn">Read-only Family View.</p>{r.view.entries.sort((a,b)=>a.prio-b.prio).map(e=><div className="card" key={e.id}><h3>{o[e.id]?.title}</h3><p>{o[e.id]?.desc}</p><p><b>Where:</b> {o[e.id]?.where||'-'}</p></div>)}</div>
+  if(r.type==='checkedin')return<div className="card"><h2>Thank you</h2><p>You’re marked as okay. Nobody was asked to open your map.</p></div>
+  if(r.type==='reminder')return<div className="card"><h2>Hi {r.owner}</h2><p>We haven’t heard from you. Tap below to say you’re okay. This cancels everything.</p><button className="p big" onClick={()=>void call('checkin')}>I’m okay</button></div>
   return<div className="card"><h2>{r.owner}</h2><p className="mu">Status: {r.confirmed} of {r.quorum} confirmations. No map content is shown before release.</p>
   {r.type==='invite'&&<button className="p" onClick={()=>void call('accept')}>Accept invitation</button>}
   {r.type==='release'&&<button className="p big" onClick={()=>void call('view')}>Open Family View</button>}
