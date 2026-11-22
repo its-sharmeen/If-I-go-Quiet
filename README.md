@@ -39,3 +39,13 @@ Hindi + large-text mode (header buttons; main screens translated), Emergency QR 
 
 - Local mode: the browser is the backend. The state machine is server-ready (pure functions) but here runs client-side; to productionise, move `evaluate/decide` into Supabase Edge Functions on a cron and swap `store.ts` for Supabase calls.
 - In local mode email and login are simulated. Sample data only. Not a will or legal advice.
+
+## Judges: test it yourself (about 5 minutes, real emails)
+1. Open the live link. Use the **Try it for real** card: enter an email and a password (6+ characters) and press **Create account**.
+2. **My map:** add one or two entries (for example “Insurance papers” and “Call first: Dr. Rao”).
+3. **My people:** add one trusted person. Use a second email of yours, or the same email if you only have one. Open the invitation email and press **Accept** (check spam).
+4. **Dashboard:** press **Start the 3-minute live test** and do nothing else.
+5. After about a minute you get a reminder email (the one-tap “I’m okay” link cancels everything). About two minutes later your trusted person gets “Please confirm”.
+6. Open it, tick the box, confirm. Your dashboard shows **Map opened** and the Family View link arrives by email.
+7. Press **Revoke access** to see the owner stay in control.
+Emails are sent from a test sender and may take up to a minute. Real days are shortened to minutes only in the live test.
