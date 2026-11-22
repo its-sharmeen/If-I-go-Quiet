@@ -23,8 +23,8 @@ export function evaluate(m:Model,now=Date.now()):Model{
   if(m.state==='CONFIRMING'&&!Object.keys(m.conf).length){m.ep++;go(m,'CONTACTS_NOTIFIED',now);reask(m,now)}
   if(m.state==='ACTIVE'&&now>due){log(m,'system','CHECKIN_MISSED','Check-in overdue',now);go(m,'GRACE',now)}
   if(m.state==='GRACE'){
-    const k=Math.min(m.grace,Math.floor((now-due)/d))
-    while(m.rem<k){m.rem++;notifyOwner(m,'reminder',`Reminder ${m.rem}: are you okay?`,'Tap once to check in. Also sent by SMS and WhatsApp (simulated).',now);log(m,'system','REMINDER_SENT',`Reminder ${m.rem} to owner`,now)}
+    const k=Math.min(m.grace,Math.floor((now-due)/d)+1)
+    while(m.rem<k){m.rem++;notifyOwner(m,'reminder',`Reminder ${m.rem}: are you okay?`,'We haven’t heard from you. Tap the link to say you’re okay. If you don’t, your trusted people will be asked to help. Also sent by SMS and WhatsApp when configured.',now);log(m,'system','REMINDER_SENT',`Reminder ${m.rem} to owner`,now)}
     if(now>ge){go(m,'CONTACTS_NOTIFIED',now);reask(m,now)}
   }
   return m
@@ -63,7 +63,7 @@ export function addContact(m:Model,name:string,rel:string,email:string,phone='',
   if(!name.trim()||!/^\S+@\S+\.\S+$/.test(email))return'Enter a name and a valid email.'
   if(m.contacts.length>=5)return'You can add up to 5 contacts.'
   const c:Contact={id:m.uid++,name:name.trim(),rel:rel.trim(),email:email.trim(),phone:phone.trim()||undefined,accepted:false};m.contacts.push(c)
-  sendMail(m,c,'invite',`You’ve been named a trusted contact by ${m.owner}`,'Accept to count toward the confirmation quorum.',now);return null}
+  sendMail(m,c,'invite',`You’ve been named a trusted contact by ${m.owner}`,`${m.owner} listed you as someone they trust. Nothing is shared with you now. You will only be asked to help if they stop responding for a long time. Please accept so you can help if that ever happens.`,now);return null}
 export function acceptInvite(m:Model,cid:number){const c=m.contacts.find(x=>x.id===cid);if(c){c.accepted=true;log(m,c.name,'INVITE_ACCEPTED','Accepted the invitation')}}
 export function removeContact(m:Model,cid:number):string|null{
   if(m.contacts.length<=1)return'Keep at least one contact.'

@@ -2,10 +2,13 @@
 import {createClient} from 'https://esm.sh/@supabase/supabase-js@2'
 import {evaluate} from '../_shared/machine.ts'
 const APP=Deno.env.get('APP_URL')!
+const BREVO=Deno.env.get('BREVO_API_KEY')
+/** Sends through Brevo if BREVO_API_KEY is set (works for any recipient with a verified sender), otherwise Resend. */
 async function email(x:any,owner:string){
-  const link=x.cid?`\n\nOpen: ${APP}/#/c/${owner}/${x.tok}`:`\n\nOpen the app: ${APP}`
-  await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${Deno.env.get('RESEND_API_KEY')}`,'Content-Type':'application/json'},
-    body:JSON.stringify({from:Deno.env.get('MAIL_FROM'),to:x.to,subject:x.subj,text:x.body+link})})}
+  const link=x.t==='reminder'?`\n\nTap to say you’re okay: ${APP}/#/c/${owner}/${x.tok}`:x.cid?`\n\nOpen: ${APP}/#/c/${owner}/${x.tok}`:`\n\nOpen the app: ${APP}`,text=x.body+link
+  const r=BREVO?await fetch('https://api.brevo.com/v3/smtp/email',{method:'POST',headers:{'api-key':BREVO,'Content-Type':'application/json'},body:JSON.stringify({sender:{name:'If I Go Quiet',email:Deno.env.get('MAIL_FROM')},to:[{email:x.to}],subject:x.subj,textContent:text})})
+    :await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${Deno.env.get('RESEND_API_KEY')}`,'Content-Type':'application/json'},body:JSON.stringify({from:Deno.env.get('MAIL_FROM'),to:x.to,subject:x.subj,text})})
+  console.log(BREVO?'brevo':'resend',r.status,x.to,await r.text())}
 async function twilio(to:string,body:string,whatsapp:boolean){
   const sid=Deno.env.get('TWILIO_ACCOUNT_SID'),tok=Deno.env.get('TWILIO_AUTH_TOKEN'),from=Deno.env.get(whatsapp?'TWILIO_WHATSAPP_FROM':'TWILIO_FROM')
   if(!sid||!tok||!from)return
@@ -21,7 +24,7 @@ Deno.serve(async()=>{
   const sb=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
   const{data}=await sb.from('snapshots').select('owner_id,data');let sent=0
   for(const r of data??[]){const m=r.data;if(m.demo||!m.seeded)continue
-    const had=new Set(m.mail.map((x:any)=>x.id));evaluate(m)
-    for(const x of m.mail.filter((x:any)=>!had.has(x.id))){await email(x,r.owner_id);await nudge(x,m,r.owner_id);sent++}
+    evaluate(m)
+    for(const x of m.mail.filter((x:any)=>!x.sent)){x.sent=true;await email(x,r.owner_id);await nudge(x,m,r.owner_id);sent++;await new Promise(f=>setTimeout(f,600))}
     await sb.from('snapshots').update({data:m}).eq('owner_id',r.owner_id)}
   return new Response(JSON.stringify({sent}))})
